@@ -8,7 +8,7 @@ public abstract class Vehicle
     public string Brand { get; set; }
     public string Model { get; set; }
     public string Color { get; set; }
-    public string Description { get; set; }
+    public string? Description { get; set; }
     public string Type { get; set; }
     public int YearOfManufacture { get; set; }
     public decimal Price { get; set; }
@@ -20,8 +20,8 @@ public abstract class Vehicle
 
 public class Automobile : Vehicle
 {
-    public string SideOfSteering { get; set; }
-    public int DoorsNumber { get; set; }
+    public string? SideOfSteering { get; set; }
+    public int? DoorsNumber { get; set; }
     public bool HasStorage { get; set; }
     public decimal StorageSize { get; set; }
     public bool HasCrashedOnce { get; set; }
