@@ -12,11 +12,12 @@ public class Dealership
     public string Country { get; set; }
     public string Phone { get; set; }
     public string Email { get; set; }
-    public string Website { get; set; }
+    public string? Website { get; set; }
     public decimal SqFeet { get; set; }
     public decimal Budget { get; set; }
     public DateTime Created { get; init; }
     public DateTime Modified { get; set; }
-    public List<User> Users { get; set; } = new();
+    // Initialize lists of users and vehicles as empty
+    public List<User> Users { get; set; } = new(); 
     public List<Vehicle> Vehicles { get; set; } = new();
 }
