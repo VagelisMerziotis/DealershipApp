@@ -2,6 +2,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using DealershipApi.Data;
+using DealershipApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Identity.Data;
 
@@ -26,6 +27,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
         };
     });
 
+builder.Services.ConfigureHttpJsonOptions(options => options.SerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles);
 builder.Services.AddOpenApi();
 builder.Services.AddDbContext<AppDbContext>((options) =>
 {
@@ -80,6 +82,38 @@ app.MapGet("/api/vehicles", async (AppDbContext db) =>
     return Results.Ok(vehicles);
 
 }).RequireAuthorization();
+
+app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Automobile newCar) =>
+{
+    // Check if the employ works in that dealership
+    var role = reqUser.FindFirst(ClaimTypes.Role)?.Value;
+    if (role != "Admin") return Results.Unauthorized();
+    // Extract dealershpId from the user object in request.
+    var dealershipIdClaim = reqUser.FindFirst("dealershipId")?.Value;
+    if (dealershipIdClaim is null) return Results.BadRequest();
+    var dealership = await db.Dealerships.FirstOrDefaultAsync(d => d.Id == int.Parse(dealershipIdClaim));
+    // Check if dealership has enough budget and modify newCar before storing
+    if (dealership is null) return Results.BadRequest("No dealership found from employee");
+    newCar.DealershipId = dealership.Id;
+    newCar.Dealership = dealership;
+    newCar.Modified = DateTime.UtcNow;
+    newCar.Created =  DateTime.UtcNow;
+    if (dealership.Budget - newCar.Price < 0 ) return Results.BadRequest("Not enough budget");
+    // Modify budget and add car
+    db.Vehicles.Add(newCar);
+    dealership.Budget -= newCar.Price;
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        newCar.Id,
+        newCar.Brand,
+        newCar.Model,
+        newCar.Price,
+        newCar.DealershipId
+    });
+
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())

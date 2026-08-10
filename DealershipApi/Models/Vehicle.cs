@@ -14,6 +14,6 @@ public abstract class Vehicle
     public decimal Price { get; set; }
     public decimal EngineVolume { get; set; }
     public bool Used { get; set; }
-    public DateTime Created { get; init; }
+    public DateTime Created { get; set; }
     public DateTime Modified { get; set; }
 } 
