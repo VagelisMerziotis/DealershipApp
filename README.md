@@ -26,7 +26,7 @@ The domain: a car dealership platform where dealerships employ users and sell ve
 - [x] Database seed script (with BCrypt-hashed passwords)
 - [x] JWT authentication — login endpoint issuing signed tokens
 - [x] Route protection via `RequireAuthorization()`
-- [ ] Role-based authorization (e.g. Admin-only endpoints)
+- [x] Role-based authorization (e.g. Admin-only endpoints)
 - [ ] Dealership-scoped authorization (users restricted to their own dealership's data)
 - [ ] Full CRUD endpoints for Dealerships, Users, and Vehicles
 - [ ] Endpoint definitions split across multiple files (currently all in `Program.cs`)
