@@ -85,9 +85,6 @@ app.MapGet("/api/vehicles", async (AppDbContext db) =>
 
 app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Automobile newCar) =>
 {
-    // Check if the employ works in that dealership
-    var role = reqUser.FindFirst(ClaimTypes.Role)?.Value;
-    if (role != "Admin") return Results.Unauthorized();
     // Extract dealershpId from the user object in request.
     var dealershipIdClaim = reqUser.FindFirst("dealershipId")?.Value;
     if (dealershipIdClaim is null) return Results.BadRequest();
@@ -114,6 +111,22 @@ app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Au
     });
 
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int dealershipId) =>
+{
+    var dealership = await db.Dealerships.FindAsync(dealershipId);
+    if (dealership is null) return Results.BadRequest("No dealership found");
+    return Results.Ok( new
+    {
+        dealership.Name,
+        dealership.Budget,
+        dealership.Users,
+        dealership.Address,
+        dealership.City,
+        dealership.State,
+    });
+    
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
