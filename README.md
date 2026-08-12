@@ -27,7 +27,7 @@ The domain: a car dealership platform where dealerships employ users and sell ve
 - [x] JWT authentication — login endpoint issuing signed tokens
 - [x] Route protection via `RequireAuthorization()`
 - [x] Role-based authorization (e.g. Admin-only endpoints)
-- [ ] Dealership-scoped authorization (users restricted to their own dealership's data)
+- [x] Dealership-scoped authorization (users restricted to their own dealership's data)
 - [ ] Full CRUD endpoints for Dealerships, Users, and Vehicles
 - [ ] Endpoint definitions split across multiple files (currently all in `Program.cs`)
 - [ ] End-to-end testing via Postman collection
