@@ -28,7 +28,9 @@ The domain: a car dealership platform where dealerships employ users and sell ve
 - [x] Route protection via `RequireAuthorization()`
 - [x] Role-based authorization (e.g. Admin-only endpoints)
 - [x] Dealership-scoped authorization (users restricted to their own dealership's data)
-- [ ] Full CRUD endpoints for Dealerships, Users, and Vehicles
+- [x] Full CRUD endpoints for Dealerships
+- [ ] Full CRUD endpoints for Users
+- [ ] Full CRUD endpoints for Vehicles
 - [ ] Endpoint definitions split across multiple files (currently all in `Program.cs`)
 - [ ] End-to-end testing via Postman collection
 - [ ] Refresh tokens
