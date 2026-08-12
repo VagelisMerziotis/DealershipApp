@@ -41,6 +41,7 @@ var app = builder.Build();
 // Register the implicit middleware for Auth 
 app.UseAuthentication();
 app.UseAuthorization();
+
 // Custom scope for DB initialization
 using (var scope = app.Services.CreateScope())
 {
@@ -76,11 +77,12 @@ app.MapPost("/api/login", async (LoginRequest request, AppDbContext db) =>
     return Results.Ok(new { token = tokenString });
 });
 
-app.MapGet("/api/vehicles", async (AppDbContext db) =>
+app.MapGet("/api/vehicles", async (AppDbContext db, ClaimsPrincipal reqUser) =>
 {
-    var vehicles = await db.Vehicles.ToListAsync();
+    if (!int.TryParse(reqUser.FindFirst("dealershipId")?.Value, out int userDealershipId)) return Results.Unauthorized();
+    var vehicles = (await db.Vehicles.ToListAsync()).FindAll(vehicle => vehicle.DealershipId == userDealershipId);
+    
     return Results.Ok(vehicles);
-
 }).RequireAuthorization();
 
 app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Automobile newCar) =>
@@ -112,11 +114,11 @@ app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Au
 
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int dealershipId) =>
+app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int dealershipId, ClaimsPrincipal reqUser) =>
 {
     var dealership = await db.Dealerships.FindAsync(dealershipId);
     if (dealership is null) return Results.BadRequest("No dealership found");
-    return Results.Ok( new
+    return Results.Ok(new
     {
         dealership.Name,
         dealership.Budget,
@@ -125,7 +127,7 @@ app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int d
         dealership.City,
         dealership.State,
     });
-    
+
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 // Configure the HTTP request pipeline.
