@@ -4,6 +4,8 @@ using System.Text;
 using DealershipApi.Data;
 using DealershipApi.Models;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using System.Reflection;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
 
 using Microsoft.EntityFrameworkCore;
@@ -114,7 +116,8 @@ app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Au
 
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int dealershipId, ClaimsPrincipal reqUser) =>
+// Dealership APIs
+app.MapGet("/api/getDealership/{dealershipId}", async (AppDbContext db, int dealershipId, ClaimsPrincipal reqUser) =>
 {
     var dealership = await db.Dealerships.FindAsync(dealershipId);
     if (dealership is null) return Results.BadRequest("No dealership found");
@@ -130,6 +133,68 @@ app.MapGet("api/getDealershipInfo/{dealershipId}", async (AppDbContext db, int d
 
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
+app.MapGet("/api/getAllDealerships", async (AppDbContext db) =>
+{
+    return await db.Dealerships.ToListAsync();
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapPost("/api/createDealership", async (AppDbContext db, CreateDealershipRequest request) =>
+{
+    Dealership dealership = new Dealership
+    {
+        Name = request.Name,
+        Address = request.Address,
+        Number = request.Number,
+        Zipcode = request.Zipcode,
+        City = request.City,
+        State = request.State,
+        Country = request.Country,
+        Phone = request.Phone,
+        Email = request.Email,
+        Website = request.Website,
+        SqFeet = request.SqFeet,
+        Budget = request.Budget,
+        Created = DateTime.UtcNow,
+        Modified = DateTime.UtcNow
+    };
+    await db.Dealerships.AddAsync(dealership);
+    await db.SaveChangesAsync();
+    
+    return Results.Ok(dealership);
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapPut("/api/modifyDealership/{dealershipId}", async (int dealershipId, AppDbContext db, ModifyDealershipRequest request) =>
+{   
+    if (dealershipId <= 0) return Results.BadRequest("Invalid dealershipId");
+    var dealership = await db.Dealerships.FirstOrDefaultAsync(d => d.Id == dealershipId);
+    if (dealership is null) return Results.NotFound("No dealership found");
+
+    foreach (var requestProp in typeof(ModifyDealershipRequest).GetProperties())
+    {
+        var newValue = requestProp.GetValue(request);
+        if (newValue is null) continue;
+
+        PropertyInfo? targetProp = typeof(Dealership).GetProperty(requestProp.Name);
+        if (targetProp is not null && targetProp.CanWrite) targetProp.SetValue(dealership, newValue);
+    }
+
+    dealership.Modified = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    
+    return Results.Ok(dealership);
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapDelete("/api/deleteDealership/{dealershipId}", async (AppDbContext db, int dealershipId) =>
+{
+    if (dealershipId <= 0) return Results.BadRequest("Invalid dealershipId");
+    int rowsDeleted = await db.Dealerships
+        .Where(d => d.Id == dealershipId)
+        .ExecuteDeleteAsync();
+    
+    if (rowsDeleted == 0) return Results.NotFound("Nothing was found to be deleted");
+    return Results.Ok($"Deleted dealership with ID: {dealershipId} successfully!");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
@@ -141,3 +206,26 @@ app.UseHttpsRedirection();
 app.Run();
 
 record LoginRequest(string Username, string Password);
+record CreateDealershipRequest(
+    string Name,
+    string Address,
+    string Number,
+    int Zipcode,
+    string City,
+    string State,
+    string Country,
+    string Phone,
+    string Email,
+    string? Website,
+    decimal SqFeet,
+    decimal Budget
+);
+
+record ModifyDealershipRequest(
+    string? Name,
+    string? Phone,
+    string? Email,
+    string? Website,
+    decimal? SqFeet,
+    decimal? Budget
+);
