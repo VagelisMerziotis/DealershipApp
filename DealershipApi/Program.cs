@@ -185,7 +185,7 @@ app.MapPut("/api/modifyDealership/{dealershipId}", async (int dealershipId, AppD
     return Results.Ok(dealership);
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
-app.MapDelete("/api/deleteDealership/{dealershipId}", async (AppDbContext db, int dealershipId) =>
+app.MapDelete("/api/deleteDealership/{dealershipId}", async (int dealershipId, AppDbContext db) =>
 {
     if (dealershipId <= 0) return Results.BadRequest("Invalid dealershipId");
     int rowsDeleted = await db.Dealerships
@@ -282,6 +282,20 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
     await db.SaveChangesAsync();
     return Results.Ok();
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapDelete("/api/deleteUser/{userId}", async (int userId, AppDbContext db) =>
+{
+    if (userId <= 0) return Results.BadRequest("Invalid dealership ID.");
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+    if (user is null) return Results.NotFound("User not found.");
+    
+    await db.Users
+        .Where(u => u.Id == userId)
+        .ExecuteDeleteAsync();
+    db.SaveChanges();
+    
+    return Results.Ok($"User with ID {userId} successfully deleted.");
+}).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
