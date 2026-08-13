@@ -10,6 +10,7 @@ using Microsoft.AspNetCore.Identity.Data;
 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql.EntityFrameworkCore.PostgreSQL.Query.Internal;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -117,7 +118,7 @@ app.MapPost("/api/orderCar", async (ClaimsPrincipal reqUser, AppDbContext db, Au
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Dealership APIs
-app.MapGet("/api/getDealership/{dealershipId}", async (AppDbContext db, int dealershipId, ClaimsPrincipal reqUser) =>
+app.MapGet("/api/getDealership/{dealershipId}", async (AppDbContext db, int dealershipId) =>
 {
     var dealership = await db.Dealerships.FindAsync(dealershipId);
     if (dealership is null) return Results.BadRequest("No dealership found");
@@ -165,7 +166,7 @@ app.MapPost("/api/createDealership", async (AppDbContext db, CreateDealershipReq
 
 app.MapPut("/api/modifyDealership/{dealershipId}", async (int dealershipId, AppDbContext db, ModifyDealershipRequest request) =>
 {   
-    if (dealershipId <= 0) return Results.BadRequest("Invalid dealershipId");
+    if (dealershipId <= 0) return Results.BadRequest("Invalid dealership ID.");
     var dealership = await db.Dealerships.FirstOrDefaultAsync(d => d.Id == dealershipId);
     if (dealership is null) return Results.NotFound("No dealership found");
 
@@ -194,6 +195,93 @@ app.MapDelete("/api/deleteDealership/{dealershipId}", async (AppDbContext db, in
     if (rowsDeleted == 0) return Results.NotFound("Nothing was found to be deleted");
     return Results.Ok($"Deleted dealership with ID: {dealershipId} successfully!");
 }).RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+// Users APIs
+app.MapGet("/api/getAllUsers", async (AppDbContext db, ClaimsPrincipal reqUser) =>
+{
+    var reqUsername = reqUser.FindFirst(ClaimTypes.Name)?.Value;
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Username == reqUsername);
+    if (user is null) return Results.BadRequest($"No role found for user {reqUser.FindFirst(ClaimTypes.Name)?.Value}");
+    if (user.Role ==  "Admin")
+    {
+        var users = await db.Users.ToListAsync();
+        return Results.Ok(users);
+    }
+
+    if (user.Role == "Manager")
+    {
+        var users = await db.Users
+            .Where(u => u.DealershipId == user.DealershipId)
+            .ToListAsync();
+        return Results.Ok(users);
+    }
+
+    return Results.BadRequest("User is not a manager/admin or does not exist.");
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapGet("/api/getUser/{userId}", async (AppDbContext db, int userId) =>
+{
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+    return user;
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapPost("/api/createUser", async (AppDbContext db, CreateUserRequest newUser) =>
+{
+    bool exists = await db.Dealerships.AnyAsync(d => d.Id == newUser.DealershipId);
+    if (newUser.DealershipId < 0 || !exists)
+    {
+        return Results.BadRequest("Invalid dealership ID.");
+    }
+    
+    var user = new User
+    {
+        DealershipId = newUser.DealershipId,
+        Role = newUser.Role,
+        Username = newUser.Username,
+        PasswordHash = BCrypt.Net.BCrypt.HashPassword(newUser.Password),
+        Email = newUser.Email,
+        FirstName = newUser.FirstName,
+        LastName = newUser.LastName,
+        Address = newUser.Address,
+        City = newUser.City,
+        State = newUser.State,
+        Country = newUser.Country,
+        Salary = newUser.Salary,
+        IsStakeholder = newUser.IsStakeholder
+    };
+
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
+
+    return Results.Ok(new
+    {
+        user.Username,
+        user.Email,
+        user.FirstName,
+        user.LastName,
+    });
+
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, ModifyUserRequest request) =>
+{
+    if (userId <= 0) return Results.BadRequest("Invalid dealership ID.");
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.BadRequest("User not found.");
+
+    foreach (var requestProp in typeof(ModifyUserRequest).GetProperties())
+    {
+        var newValue = requestProp.GetValue(request);
+        if (newValue is null) continue;
+
+        PropertyInfo? targetProp = typeof(User).GetProperty(requestProp.Name);
+        if (targetProp is null) continue;
+        targetProp.SetValue(user, newValue);
+    }
+    
+    await db.SaveChangesAsync();
+    return Results.Ok();
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -228,4 +316,35 @@ record ModifyDealershipRequest(
     string? Website,
     decimal? SqFeet,
     decimal? Budget
+);
+
+record CreateUserRequest(
+    int DealershipId,
+    string Role,
+    string Username,
+    string Password,
+    string Email,
+    string FirstName,
+    string LastName,
+    string Address,
+    string City,
+    string State,
+    string Country,
+    int Salary,
+    bool IsStakeholder
+);
+
+record ModifyUserRequest(
+    int? DealershipId,
+    string? Role,
+    string? Username,
+    string? Email,
+    string? FirstName,
+    string? LastName,
+    string? Address,
+    string? City,
+    string? State,
+    string? Country,
+    int? Salary,
+    bool? IsStakeholder
 );
