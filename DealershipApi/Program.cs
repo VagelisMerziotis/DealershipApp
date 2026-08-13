@@ -222,7 +222,16 @@ app.MapGet("/api/getAllUsers", async (AppDbContext db, ClaimsPrincipal reqUser) 
 app.MapGet("/api/getUser/{userId}", async (AppDbContext db, int userId) =>
 {
     var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
-    return user;
+    if (user is null) return Results.NotFound($"No user found with id {userId}");
+    
+    return Results.Ok(new
+    {
+        user.Username,
+        user.Email,
+        user.FirstName,
+        user.LastName,
+        user.Role,
+    });
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 app.MapPost("/api/createUser", async (AppDbContext db, CreateUserRequest newUser) =>
