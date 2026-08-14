@@ -1,4 +1,5 @@
 namespace DealershipApi.Models;
+using System.Text.Json.Serialization;
 
 public class User
 {
@@ -7,6 +8,7 @@ public class User
     public Dealership Dealership { get; set; }
     public string Role { get; set; }
     public string Username { get; set; }
+    [JsonIgnore]
     public string PasswordHash { get; set; }
     public string Email { get; set; }
     public string FirstName { get; set; }
