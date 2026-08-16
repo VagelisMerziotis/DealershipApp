@@ -301,6 +301,14 @@ app.MapGet("/api/getCar/{carId}", (int carId, AppDbContext db) =>
     return Results.Ok(vehicle);
 });
 
+app.MapPost("/api/modifyCar/{carId}", (int carId, AppDbContext db, ) =>
+{
+    if (carId <= 0) return Results.BadRequest("Invalid dealership ID.");
+    var vehicle = db.Vehicles
+        .Where(v => v.Id == carId);
+    
+});
+
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
