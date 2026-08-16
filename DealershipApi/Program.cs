@@ -292,19 +292,14 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
     return Results.Ok();
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
-app.MapDelete("/api/deleteUser/{userId}", async (int userId, AppDbContext db) =>
+// Users APIs
+app.MapGet("/api/getCar/{carId}", (int carId, AppDbContext db) =>
 {
-    if (userId <= 0) return Results.BadRequest("Invalid dealership ID.");
-    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
-    if (user is null) return Results.NotFound("User not found.");
-    
-    await db.Users
-        .Where(u => u.Id == userId)
-        .ExecuteDeleteAsync();
-    db.SaveChanges();
-    
-    return Results.Ok($"User with ID {userId} successfully deleted.");
-}).RequireAuthorization(policy => policy.RequireRole("Admin"));
+    if  (carId <= 0) return Results.BadRequest("Invalid dealership ID.");
+    var vehicle = db.Vehicles
+        .Where(v => v.Id == carId);
+    return Results.Ok(vehicle);
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -370,4 +365,22 @@ record ModifyUserRequest(
     string? Country,
     int? Salary,
     bool? IsStakeholder
+);
+
+record ModifyVehicleRequest(
+    string? Brand,
+    string? Model,
+    string? Color,
+    string? Type,
+    string? Description,
+    int? YearOfManufacture,
+    decimal? Price,
+    decimal? EngineVolume,
+    bool? Used,
+    string? SideOfSteering,
+    int? DoorsNumber,
+    bool? HasStorage,
+    decimal? StorageSize,
+    bool? HasCrashedOnce,
+    int? Gears
 );
