@@ -276,7 +276,7 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
 {
     if (userId <= 0) return Results.BadRequest("Invalid dealership ID.");
     var user = await db.Users.FindAsync(userId);
-    if (user is null) return Results.BadRequest("User not found.");
+    if (user is null) return Results.NotFound("User not found.");
 
     foreach (var requestProp in typeof(ModifyUserRequest).GetProperties())
     {
@@ -292,38 +292,6 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
     return Results.Ok();
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
-// Users APIs
-app.MapGet("/api/getUser/{userId}", async (int userId, AppDbContext db) =>
-{
-    if (userId <= 0) return Results.BadRequest("Invalid user ID.");
-
-    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
-    if (user is null) return Results.NotFound($"No user found with id {userId}");
-
-    return Results.Ok(user);
-}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
-
-app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, ModifyUserRequest request) =>
-{
-    if (userId <= 0) return Results.BadRequest("Invalid user ID.");
-
-    var user = await db.Users.FindAsync(userId);
-    if (user is null) return Results.NotFound("User not found.");
-
-    foreach (var requestProp in typeof(ModifyUserRequest).GetProperties())
-    {
-        var newValue = requestProp.GetValue(request);
-        if (newValue is null) continue;
-
-        PropertyInfo? targetProp = typeof(User).GetProperty(requestProp.Name);
-        if (targetProp is not null && targetProp.CanWrite) targetProp.SetValue(user, newValue);
-    }
-
-    await db.SaveChangesAsync();
-
-    return Results.Ok(user);
-}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
-
 app.MapDelete("/api/deleteUser/{userId}", async (int userId, AppDbContext db) =>
 {
     if (userId <= 0) return Results.BadRequest("Invalid user ID.");
@@ -332,7 +300,71 @@ app.MapDelete("/api/deleteUser/{userId}", async (int userId, AppDbContext db) =>
         .ExecuteDeleteAsync();
     
     return Results.Ok($"Deleted user with ID {userId}");
-});
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+// Vehicles APIs
+app.MapGet("/api/getAllVehicles", async (AppDbContext db, ClaimsPrincipal reqUser) =>
+{
+    var role = reqUser.FindFirst(ClaimTypes.Role)?.Value;
+
+    if (role == "Admin" || role == "Manager")
+    {
+        var vehicles = await db.Vehicles.ToListAsync();
+        return Results.Ok(vehicles);
+    }
+
+    if (!int.TryParse(reqUser.FindFirst("dealershipId")?.Value, out int userDealershipId))
+        return Results.BadRequest("No dealership found for user.");
+
+    var scopedVehicles = await db.Vehicles
+        .Where(v => v.DealershipId == userDealershipId)
+        .ToListAsync();
+
+    return Results.Ok(scopedVehicles);
+})
+.RequireAuthorization();
+
+app.MapGet("/api/getCar/{carId}", async (AppDbContext db, int carId) =>
+{
+    var vehicle = await db.Vehicles.FirstOrDefaultAsync(v => v.Id == carId);
+    if (vehicle is null) return Results.NotFound($"No vehicle found with id {carId}");
+
+    return Results.Ok(vehicle);
+})
+.RequireAuthorization();
+
+app.MapPut("/api/modifyCar/{carId}", async (int carId, AppDbContext db, ModifyVehicleRequest request) =>
+{
+    if (carId <= 0) return Results.BadRequest("Invalid car ID.");
+    var vehicle = await db.Vehicles.FindAsync(carId);
+    if (vehicle is null) return Results.NotFound("Vehicle not found.");
+
+    foreach (var requestProp in typeof(ModifyVehicleRequest).GetProperties())
+    {
+        var newValue = requestProp.GetValue(request);
+        if (newValue is null) continue;
+
+        PropertyInfo? targetProp = vehicle.GetType().GetProperty(requestProp.Name);
+        if (targetProp is null || !targetProp.CanWrite) continue;
+        targetProp.SetValue(vehicle, newValue);
+    }
+
+    vehicle.Modified = DateTime.UtcNow;
+    await db.SaveChangesAsync();
+    return Results.Ok(vehicle);
+})
+.RequireAuthorization(policy => policy.RequireRole("Admin"));
+
+app.MapDelete("/api/deleteCar/{carId}", async (int carId, AppDbContext db) =>
+{
+    if (carId <= 0) return Results.BadRequest("Invalid car ID.");
+
+    int rowsDeleted = await db.Vehicles.Where(v => v.Id == carId).ExecuteDeleteAsync();
+    if (rowsDeleted == 0) return Results.NotFound("Vehicle not found.");
+
+    return Results.Ok($"Deleted vehicle with ID {carId}");
+})
+.RequireAuthorization(policy => policy.RequireRole("Admin"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
