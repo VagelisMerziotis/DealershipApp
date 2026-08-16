@@ -293,21 +293,36 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 // Users APIs
-app.MapGet("/api/getCar/{carId}", (int carId, AppDbContext db) =>
+app.MapGet("/api/getUser/{userId}", async (int userId, AppDbContext db) =>
 {
-    if  (carId <= 0) return Results.BadRequest("Invalid dealership ID.");
-    var vehicle = db.Vehicles
-        .Where(v => v.Id == carId);
-    return Results.Ok(vehicle);
-});
+    if (userId <= 0) return Results.BadRequest("Invalid user ID.");
 
-app.MapPost("/api/modifyCar/{carId}", (int carId, AppDbContext db, ) =>
+    var user = await db.Users.FirstOrDefaultAsync(u => u.Id == userId);
+    if (user is null) return Results.NotFound($"No user found with id {userId}");
+
+    return Results.Ok(user);
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, ModifyUserRequest request) =>
 {
-    if (carId <= 0) return Results.BadRequest("Invalid dealership ID.");
-    var vehicle = db.Vehicles
-        .Where(v => v.Id == carId);
-    
-});
+    if (userId <= 0) return Results.BadRequest("Invalid user ID.");
+
+    var user = await db.Users.FindAsync(userId);
+    if (user is null) return Results.NotFound("User not found.");
+
+    foreach (var requestProp in typeof(ModifyUserRequest).GetProperties())
+    {
+        var newValue = requestProp.GetValue(request);
+        if (newValue is null) continue;
+
+        PropertyInfo? targetProp = typeof(User).GetProperty(requestProp.Name);
+        if (targetProp is not null && targetProp.CanWrite) targetProp.SetValue(user, newValue);
+    }
+
+    await db.SaveChangesAsync();
+
+    return Results.Ok(user);
+}).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
