@@ -29,10 +29,14 @@ The domain: a car dealership platform where dealerships employ users and sell ve
 - [x] Role-based authorization (e.g. Admin-only endpoints)
 - [x] Dealership-scoped authorization (users restricted to their own dealership's data)
 - [x] Full CRUD endpoints for Dealerships
+- [x] Full CRUD endpoints for Users
+- [x] Full CRUD endpoints for Vehicles
+- [x] Password hashes excluded from all API responses (`[JsonIgnore]` on `User.PasswordHash`)
 - [x] Cascade delete — removing a Dealership removes its Users and Vehicles
-- [ ] Full CRUD endpoints for Users
-- [ ] Full CRUD endpoints for Vehicles
 - [ ] Endpoint definitions split across multiple files (currently all in `Program.cs`)
+- [ ] Consistent 404-vs-400 responses across all endpoints (see Known Issues)
+- [ ] Consistent REST-style route naming (see Known Issues)
+- [ ] Remove duplicate vehicle-listing endpoint (see Known Issues)
 - [ ] End-to-end testing via Postman collection
 - [ ] Refresh tokens
 
@@ -68,33 +72,43 @@ Authentication is stateless, via JWT:
 
 The JWT signing key is stored via .NET User Secrets (`Jwt:Key`), not committed to source control.
 
+### Password hash safety
+
+`User.PasswordHash` is decorated with `[JsonIgnore]`, so it is never present in any JSON response — regardless of which endpoint returns a `User` object, or whether that endpoint remembers to manually project the response down to a safe field list. This was fixed after an early version of `GET /api/getAllUsers` and `GET /api/getUser/{id}` briefly returned the full entity, hash included; rather than relying on every endpoint to manually exclude the field, the property itself is now unrepresentable in JSON. `[JsonIgnore]` only affects serialization — server-side code (e.g. `BCrypt.Verify` during login) still reads and writes the property normally.
+
 ### Authorization model
 
 Authorization combines two mechanisms:
 
-- **Role-based** — endpoints restricted via `RequireAuthorization(policy => policy.RequireRole(...))`, e.g. only `Admin` can create or delete a dealership.
-- **Dealership-scoped** — for resources like vehicles, non-Admin/Manager users only see data belonging to their own dealership (read from the `dealershipId` claim in their token), while `Admin` and `Manager` roles can access any dealership's data.
+- **Role-based** — endpoints restricted via `RequireAuthorization(policy => policy.RequireRole(...))`, e.g. only `Admin` can delete a dealership.
+- **Dealership-scoped** — for list endpoints on Vehicles and Users, non-Admin/Manager roles only see data belonging to their own dealership (read from the `dealershipId` claim in their token, or looked up server-side), while `Admin` and `Manager` can access all dealerships' data.
 
-| Action | Endpoint | Who |
-|---|---|---|
-| List vehicles | `GET /api/vehicles` | Any authenticated user — Admin/Manager see all dealerships, others see only their own |
-| Order a new vehicle | `POST /api/orderCar` | Admin only, scoped to their own dealership |
-| Get dealership info | `GET /api/getDealershipInfo/{id}` | Admin or Manager, any dealership |
-| List all dealerships | `GET /api/getDealerships` | Admin or Manager |
-| Create dealership | `POST /api/createDealership` | Admin only |
-| Update dealership | `PUT /api/dealerships/{id}` | Admin only |
-| Delete dealership | `DELETE /api/deleteDealership/{id}` | Admin only |
+| Resource | Endpoint | Who | Scope |
+|---|---|---|---|
+| Login | `POST /api/login` | Anyone | — |
+| Vehicles | `GET /api/vehicles` | Any authenticated user | Admin/Manager see all; others see only their own dealership |
+| Vehicles | `GET /api/getCar/{id}` | Any authenticated user | Not scoped — any authenticated user can fetch any vehicle by ID (see Known Issues) |
+| Vehicles | `POST /api/orderCar` | Admin only | Scoped to the Admin's own dealership |
+| Vehicles | `PUT /api/modifyCar/{id}` | Admin only | — |
+| Vehicles | `DELETE /api/deleteCar/{id}` | Admin only | — |
+| Dealerships | `GET /api/getDealership/{id}` | Admin, Manager | Any dealership |
+| Dealerships | `GET /api/getAllDealerships` | Admin, Manager | All |
+| Dealerships | `POST /api/createDealership` | Admin only | — |
+| Dealerships | `PUT /api/modifyDealership/{id}` | Admin only | — |
+| Dealerships | `DELETE /api/deleteDealership/{id}` | Admin only | Cascades to Users/Vehicles |
+| Users | `GET /api/getAllUsers` | Admin, Manager | Admin sees all; Manager sees only their own dealership's staff |
+| Users | `GET /api/getUser/{id}` | Admin, Manager | Any user |
+| Users | `POST /api/createUser` | Admin, Manager | — |
+| Users | `PUT /api/modifyUser/{id}` | Admin, Manager | — |
+| Users | `DELETE /api/deleteUser/{id}` | Admin, Manager | — |
 
-## Dealership CRUD
+## CRUD Patterns
 
-Full CRUD is implemented for the `Dealership` entity:
+Every Create/Update endpoint follows the same shape, established with Dealerships and reused for Users and Vehicles:
 
-- **Create** (`POST /api/createDealership`) — accepts a `CreateDealershipRequest` DTO (not the raw `Dealership` entity), so clients can't set server-controlled fields like `Id`, `Created`, or `Modified`. The server stamps timestamps and persists the new dealership.
-- **Read** — `GET /api/getDealershipInfo/{id}` for a single dealership's summary (name, budget, address, employees), `GET /api/getDealerships` for the full list.
-- **Update** (`PUT /api/dealerships/{id}`) — accepts a `ModifyDealershipRequest` DTO where every field is nullable, representing a partial update. Rather than a long chain of manual `if (request.X is not null) dealership.X = request.X;` checks, this endpoint uses **reflection** (`System.Reflection.PropertyInfo`) to loop over the DTO's properties, skip any that are `null` (not provided by the client), and copy the rest onto the matching property of the tracked `Dealership` entity by name. This was a deliberate exercise in C# reflection as an alternative to writing out each field explicitly — the trade-off is that renaming a property on one side without the other fails silently at runtime rather than at compile time, whereas explicit field-by-field checks would catch that immediately.
-- **Delete** (`DELETE /api/deleteDealership/{id}`) — uses EF Core's `ExecuteDeleteAsync()` for a direct, single-round-trip database delete rather than loading the entity first. Cascades to the dealership's vehicles and users (see above).
-
-Users and Vehicles CRUD follow the same DTO-in/entity-out pattern and are next in progress.
+- **Create** — accepts a purpose-built `Create...Request` DTO rather than the raw entity, so clients can never set server-controlled fields (`Id`, `Created`, `PasswordHash`, etc.) through the request body. For Users specifically, the DTO takes a plaintext `Password` field, which is hashed with BCrypt before the `User` entity is constructed — this transformation is why user creation is written out field-by-field rather than via the reflection helper described below.
+- **Update** — accepts a `Modify...Request` DTO where every field is nullable, representing a partial update. Instead of a long chain of manual `if (request.X is not null) entity.X = request.X;` checks, these endpoints use **reflection** (`System.Reflection.PropertyInfo`) to loop over the DTO's properties, skip any left `null` by the client, and copy the rest onto the matching property of the tracked entity by name. This keeps the update endpoints short, at the cost of type safety: a property renamed on one side without the other fails silently at runtime instead of at compile time. `ModifyUserRequest` deliberately excludes `Password` — password changes are sensitive enough to warrant their own dedicated endpoint rather than being foldable into a generic patch. For `Vehicle`, the reflection loop matches properties against `vehicle.GetType()` (the concrete runtime type, e.g. `Automobile`) rather than the abstract `Vehicle` base type, so subtype-specific fields like `Gears` or `DoorsNumber` are found correctly.
+- **Delete** — uses EF Core's `ExecuteDeleteAsync()` for a direct, single-round-trip database delete rather than loading the entity first, where it doesn't need to be loaded for validation reasons.
 
 ## Local Development Setup
 
@@ -174,7 +188,7 @@ DealershipApp/
     ├── Program.cs              # App entry point, DI setup, auth config, endpoint definitions
     ├── Models/
     │   ├── Vehicle.cs          # Abstract base entity + Automobile subtype
-    │   ├── User.cs
+    │   ├── User.cs             # PasswordHash marked [JsonIgnore]
     │   └── Dealership.cs
     ├── Data/
     │   ├── AppDbContext.cs     # EF Core DbContext, DbSets, inheritance + cascade config
@@ -189,6 +203,17 @@ DealershipApp/
 - **Migrations are committed to git**: unlike build artifacts (`bin/`, `obj/`), EF Core migrations are source code describing schema history and are required for anyone cloning the repo to set up a working database.
 - **No server-side token storage**: JWTs are stateless by design — the tradeoff is that tokens can't be revoked before they expire without adding extra infrastructure (e.g. a token blocklist). Acceptable for this project's current scope; noted as a possible future improvement alongside refresh tokens.
 - **DTOs instead of binding directly to entities**: Create/Update endpoints accept purpose-built request records rather than the EF Core entity types directly, so clients can never set server-controlled fields (`Id`, `Created`, password hashes, etc.) through the request body.
+- **Reflection for partial updates, explicit assignment for creation**: partial-update endpoints copy fields generically via reflection since it's a pure optional-overwrite operation; creation endpoints (especially Users, which need password hashing) are written out explicitly, since that step involves real transformation logic that a generic name-matching copy can't safely express.
+- **`[JsonIgnore]` over manual response projection for secrets**: rather than remembering to exclude `PasswordHash` in every individual endpoint's response, it's excluded once at the model level — a mistake at one call site can't reintroduce the leak.
+
+## Known Issues / Cleanup Backlog
+
+- **Duplicate vehicle-listing endpoints**: `GET /api/vehicles` and `GET /api/getAllVehicles` both return a dealership-scoped vehicle list with near-identical logic. One should be removed.
+- **`GET /api/getCar/{id}` is not dealership-scoped**: unlike the list endpoint, fetching a single vehicle by ID does not check the caller's role or dealership, so any authenticated user can currently look up any vehicle regardless of which dealership it belongs to.
+- **`PUT /api/modifyUser/{id}` returns an empty `200 OK`** rather than the updated user, unlike every other Update endpoint in the API, which return the modified resource.
+- **`DELETE /api/deleteUser/{id}` does not check whether a user was actually deleted** before returning success, and is currently reachable by both `Admin` and `Manager` roles rather than `Admin` only as originally intended.
+- Several "not found" cases still return `400 BadRequest` instead of the more correct `404 NotFound` (e.g. `getDealership`, `orderCar`).
+- Route naming is inconsistent across resources (e.g. `getDealership` vs `getAllUsers` vs `getUser`) rather than following a uniform REST convention (`GET /api/dealerships`, `GET /api/dealerships/{id}`, etc.) — a rename pass is planned.
 
 ## License
 
