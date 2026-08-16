@@ -7,7 +7,7 @@ using Microsoft.AspNetCore.Authentication.JwtBearer;
 using System.Reflection;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity.Data;
-
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Query.Internal;
@@ -323,6 +323,16 @@ app.MapPut("/api/modifyUser/{userId}", async (int userId, AppDbContext db, Modif
 
     return Results.Ok(user);
 }).RequireAuthorization(policy => policy.RequireRole("Admin", "Manager"));
+
+app.MapDelete("/api/deleteUser/{userId}", async (int userId, AppDbContext db) =>
+{
+    if (userId <= 0) return Results.BadRequest("Invalid user ID.");
+    await db.Users
+        .Where(u => u.Id == userId)
+        .ExecuteDeleteAsync();
+    
+    return Results.Ok($"Deleted user with ID {userId}");
+});
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
